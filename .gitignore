@@ -1,4 +1,94 @@
-*.pyc
-*.log
+#editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.history
+.env
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.tsbuildinfo
+*.local
+.gigaide
 
-.venv
+# Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pycache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env/
+
+
+# Test env
+!tests/env/
+!tests/env/**
+
+# Build & packaging
+build/
+dist/
+site/
+/.build-info.json
+*.egg
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Testing & coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+
+# Type checkers & linters
+.mypy_cache/
+.ruff_cache/
+.pytype/
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Eval run artifacts
+runs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.openclaude/
+.cursor/
+
+# Dependencies
+node_modules/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Accidental root-level model from the starter notebook
+/model.pkl
+
+# Temp local dir
+tmp/
+
+# Generated Compose client results
+results/*.json
+
+
+flask.log
