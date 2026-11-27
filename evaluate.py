@@ -10,14 +10,13 @@ import pandas as pd
 from mlflow.entities import Run
 from numpy.typing import NDArray
 
+from service.features import RoomsEncoding, make_features
 from train import (
     TRACKING_URI,
     Metrics,
-    RoomsEncoding,
     TrainingData,
     evaluate,
     load_data,
-    make_features,
 )
 
 
@@ -76,6 +75,7 @@ def save_test_result(
             mlflow.log_artifact(str(path))
         mlflow.log_artifact("evaluate.py", artifact_path="evaluation_code")
         mlflow.log_artifact("train.py", artifact_path="evaluation_code")
+        mlflow.log_artifact("service/features.py", artifact_path="evaluation_code")
 
 
 def evaluate_run(run_id: str) -> TestResult:
