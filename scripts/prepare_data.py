@@ -4,7 +4,48 @@ import json
 import re
 import unicodedata
 from collections import Counter
+from collections.abc import Iterable, Mapping
 from pathlib import Path
+from typing import NotRequired, TypedDict
+
+
+class Listing(TypedDict):
+    id: str
+    rooms: int
+    area: float
+    floor: int
+    total_floors: int
+    price: int
+    property_type: str
+    address: str
+    source_url: str
+    source_file: NotRequired[str]
+
+
+class SourceRow(TypedDict):
+    source_file: str
+    source_row: int
+    source_url: str
+    raw_rooms: str
+    raw_area: str
+    raw_floor: str
+    raw_price: str
+    reason: NotRequired[str]
+
+
+class PriceRange(TypedDict):
+    min: int | None
+    max: int | None
+
+
+class PreparationReport(TypedDict):
+    input_files: list[str]
+    input_rows: int
+    accepted_rows: int
+    excluded_rows: int
+    excluded_by_reason: dict[str, int]
+    property_types: dict[str, int]
+    price_rub: PriceRange
 
 
 COLUMNS = {
@@ -14,25 +55,48 @@ COLUMNS = {
     "floor": "s6KKu 3",
     "price": "s5oAg",
 }
-FIELDS = ["id", "rooms", "area", "floor", "total_floors", "price",
-          "property_type", "address", "source_url", "source_file"]
-REJECT_FIELDS = ["source_file", "source_row", "source_url", "reason",
-                 "raw_rooms", "raw_area", "raw_floor", "raw_price"]
+FIELDS = [
+    "id",
+    "rooms",
+    "area",
+    "floor",
+    "total_floors",
+    "price",
+    "property_type",
+    "address",
+    "source_url",
+    "source_file",
+]
+REJECT_FIELDS = [
+    "source_file",
+    "source_row",
+    "source_url",
+    "reason",
+    "raw_rooms",
+    "raw_area",
+    "raw_floor",
+    "raw_price",
+]
 
 
-def normalize(value):
+def normalize(value: str | None) -> str:
     text = unicodedata.normalize("NFKC", value or "")
     return " ".join(text.split()).replace("–", "-").replace("\u2014", "-")
 
 
-def parse_listing(raw):
+def parse_listing(raw: Mapping[str, str]) -> Listing:
     values = {name: normalize(raw.get(column)) for name, column in COLUMNS.items()}
     aggregate_label = r"\d+ предложени[яйе] (?:такой|этой) планировки"
-    if (values["price"].lower().startswith("от ")
-            or re.search(r"\d\s*-\s*\d", values["floor"])
-            or re.search(r"\d\s*-\s*\d", values["area"])
-            or any(re.fullmatch(aggregate_label, normalize(v).lower())
-                   for v in raw.values() if isinstance(v, str))):
+    if (
+        values["price"].lower().startswith("от ")
+        or re.search(r"\d\s*-\s*\d", values["floor"])
+        or re.search(r"\d\s*-\s*\d", values["area"])
+        or any(
+            re.fullmatch(aggregate_label, normalize(v).lower())
+            for v in raw.values()
+            if isinstance(v, str)
+        )
+    ):
         raise ValueError("aggregated_offer")
 
     identifier = re.search(r"/card/[a-z_]+__(\d+)(?:$|[/?#])", values["url"])
@@ -73,21 +137,23 @@ def parse_listing(raw):
     }
 
 
-def write_csv(path, fields, rows):
+def write_csv(
+    path: Path, fields: list[str], rows: Iterable[Mapping[str, object]]
+) -> None:
     with path.open("w", encoding="utf-8", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=fields)
         writer.writeheader()
         writer.writerows(rows)
 
 
-def prepare_dataset(input_dir, output_dir):
+def prepare_dataset(input_dir: Path, output_dir: Path) -> PreparationReport:
     files = sorted(input_dir.glob("*.csv"), key=lambda path: path.stem)
     if not files:
         raise ValueError(f"No CSV files in {input_dir}")
 
-    accepted = {}
-    origins = {}
-    rejected = []
+    accepted: dict[str, Listing] = {}
+    origins: dict[str, SourceRow] = {}
+    rejected: list[SourceRow] = []
     input_rows = 0
     for path in files:
         with path.open(encoding="utf-8-sig", newline="") as stream:
@@ -97,7 +163,7 @@ def prepare_dataset(input_dir, output_dir):
                 raise ValueError(f"{path.name}: missing columns {sorted(missing)}")
             for number, raw in enumerate(reader, start=2):
                 input_rows += 1
-                origin = {
+                origin: SourceRow = {
                     "source_file": path.name,
                     "source_row": number,
                     "source_url": raw.get(COLUMNS["url"], ""),
@@ -109,40 +175,53 @@ def prepare_dataset(input_dir, output_dir):
                 try:
                     row = parse_listing(raw)
                 except ValueError as error:
-                    rejected.append(origin | {"reason": str(error)})
+                    rejected.append({**origin, "reason": str(error)})
                     continue
                 identifier = row["id"]
                 if identifier in accepted:
-                    rejected.append(origins[identifier] | {"reason": "duplicate_id"})
+                    rejected.append({**origins[identifier], "reason": "duplicate_id"})
                 # ISO dates in filenames make the latest valid snapshot win.
-                accepted[identifier] = row | {"source_file": path.name}
+                accepted[identifier] = {**row, "source_file": path.name}
                 origins[identifier] = origin
 
     rows = []
     objects = set()
     for row in sorted(accepted.values(), key=lambda row: int(row["id"])):
-        key = tuple(row[field] for field in
-                    ("address", "rooms", "area", "floor", "total_floors", "property_type"))
+        key = (
+            row["address"],
+            row["rooms"],
+            row["area"],
+            row["floor"],
+            row["total_floors"],
+            row["property_type"],
+        )
         if row["address"] and key in objects:
-            rejected.append(origins[row["id"]] | {"reason": "duplicate_object"})
+            rejected.append({**origins[row["id"]], "reason": "duplicate_object"})
             continue
         objects.add(key)
         rows.append(row)
-    report = {
+    report: PreparationReport = {
         "input_files": [path.name for path in files],
         "input_rows": input_rows,
         "accepted_rows": len(rows),
         "excluded_rows": len(rejected),
-        "excluded_by_reason": dict(sorted(Counter(row["reason"] for row in rejected).items())),
-        "property_types": dict(sorted(Counter(row["property_type"] for row in rows).items())),
-        "price_rub": {"min": min((r["price"] for r in rows), default=None),
-                      "max": max((r["price"] for r in rows), default=None)},
+        "excluded_by_reason": dict(
+            sorted(Counter(row["reason"] for row in rejected).items())
+        ),
+        "property_types": dict(
+            sorted(Counter(row["property_type"] for row in rows).items())
+        ),
+        "price_rub": {
+            "min": min((r["price"] for r in rows), default=None),
+            "max": max((r["price"] for r in rows), default=None),
+        },
     }
     output_dir.mkdir(parents=True, exist_ok=True)
     write_csv(output_dir / "listings.csv", FIELDS, rows)
     write_csv(output_dir / "excluded.csv", REJECT_FIELDS, rejected)
     (output_dir / "summary.json").write_text(
-        json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
     return report
 
 
@@ -151,5 +230,10 @@ if __name__ == "__main__":
     parser.add_argument("--input-dir", type=Path, default=Path("data/raw"))
     parser.add_argument("--output-dir", type=Path, default=Path("data/processed"))
     args = parser.parse_args()
-    print(json.dumps(prepare_dataset(args.input_dir, args.output_dir),
-                     ensure_ascii=False, indent=2))
+    print(
+        json.dumps(
+            prepare_dataset(args.input_dir, args.output_dir),
+            ensure_ascii=False,
+            indent=2,
+        )
+    )

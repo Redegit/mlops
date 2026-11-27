@@ -11,3 +11,4 @@ boto3
 python-dotenv
 flask_httpauth 
 locust
+mlflow==3.18.0

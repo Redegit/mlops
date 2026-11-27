@@ -65,6 +65,10 @@ coverage.xml
 
 # Eval run artifacts
 runs/
+.mlflow/
+/mlflow.db
+/mlflow.db-shm
+/mlflow.db-wal
 
 # IDE
 .idea/
