@@ -118,7 +118,16 @@ def prepare_dataset(input_dir, output_dir):
                 accepted[identifier] = row | {"source_file": path.name}
                 origins[identifier] = origin
 
-    rows = sorted(accepted.values(), key=lambda row: int(row["id"]))
+    rows = []
+    objects = set()
+    for row in sorted(accepted.values(), key=lambda row: int(row["id"])):
+        key = tuple(row[field] for field in
+                    ("address", "rooms", "area", "floor", "total_floors", "property_type"))
+        if row["address"] and key in objects:
+            rejected.append(origins[row["id"]] | {"reason": "duplicate_object"})
+            continue
+        objects.add(key)
+        rows.append(row)
     report = {
         "input_files": [path.name for path in files],
         "input_rows": input_rows,

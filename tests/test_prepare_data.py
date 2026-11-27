@@ -65,6 +65,39 @@ class PrepareDataTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "invalid_floor"):
             parse_listing(listing(**{"s6KKu 3": "20/19 эт."}))
 
+    def test_object_duplicates_keep_lowest_id_regardless_of_price_or_input_order(self):
+        with tempfile.TemporaryDirectory() as folder:
+            raw = Path(folder) / "raw"
+            raw.mkdir()
+            records = [
+                listing(**{"sNO6x href": "https://domclick.ru/card/sale__flat__200",
+                           "s5oAg": "11 000 000 ₽"}),
+                listing(**{"sNO6x href": "https://domclick.ru/card/sale__flat__99"}),
+                listing(**{"sNO6x href": "https://domclick.ru/card/sale__flat__300",
+                           "s6KKu 3": "6/19 эт."}),
+                listing(**{"sNO6x href": "https://domclick.ru/card/sale__flat__400",
+                           "sS4xs": ""}),
+                listing(**{"sNO6x href": "https://domclick.ru/card/sale__flat__500",
+                           "sS4xs": ""}),
+            ]
+            with (raw / "snapshot.csv").open("w", encoding="utf-8", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=records[0].keys())
+                writer.writeheader()
+                writer.writerows(records)
+            output = Path(folder) / "processed"
+            report = prepare_dataset(raw, output)
+            with (output / "listings.csv").open() as f:
+                self.assertEqual([r["id"] for r in csv.DictReader(f)],
+                                 ["99", "300", "400", "500"])
+            with (output / "excluded.csv").open() as f:
+                excluded = list(csv.DictReader(f))
+            self.assertEqual(report["excluded_by_reason"], {"duplicate_object": 1})
+            self.assertEqual(excluded[0]["source_url"],
+                             "https://domclick.ru/card/sale__flat__200")
+            self.assertEqual(excluded[0]["reason"], "duplicate_object")
+            self.assertEqual(report["input_rows"],
+                             report["accepted_rows"] + report["excluded_rows"])
+
     def test_later_valid_snapshot_replaces_duplicate(self):
         with tempfile.TemporaryDirectory() as folder:
             raw = Path(folder) / "raw"
