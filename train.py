@@ -24,12 +24,11 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
 from scripts.split_data import DATA_PATH
+from service.features import RoomsEncoding, make_features
+from service.predict import EXPERIMENT_NAME, TRACKING_URI
 
 ModelName = Literal["baseline", "linear", "ridge"]
-RoomsEncoding = Literal["legacy", "numeric", "categorical"]
 Model = DummyRegressor | TransformedTargetRegressor
-TRACKING_URI = "sqlite:///" + str(Path(".mlflow/mlflow.db").resolve())
-EXPERIMENT_NAME = "domclick_price"
 
 
 @dataclass
@@ -70,32 +69,6 @@ def load_data() -> TrainingData:
         data_sha256=data_sha,
         split_sha256=hashlib.sha256(split_path.read_bytes()).hexdigest(),
     )
-
-
-def make_features(
-    data: pd.DataFrame,
-    rooms_encoding: RoomsEncoding = "legacy",
-    include_floor: bool = False,
-) -> pd.DataFrame:
-    features = pd.DataFrame(
-        {
-            "total_meters": data["area"].astype(float),
-            "floors_count": data["total_floors"],
-        }
-    )
-    if rooms_encoding == "numeric":
-        features["rooms"] = data["rooms"]
-    else:
-        categories = range(4) if rooms_encoding == "categorical" else range(1, 4)
-        for rooms in categories:
-            features[f"rooms_{rooms}"] = data["rooms"] == rooms
-        if rooms_encoding == "categorical":
-            features["rooms_4plus"] = data["rooms"] >= 4
-    if include_floor:
-        features["floor"] = data["floor"]
-    features["first_floor"] = data["floor"] == 1
-    features["last_floor"] = data["floor"] == data["total_floors"]
-    return features
 
 
 def build_model(name: ModelName, alpha: float) -> Model:
@@ -180,6 +153,8 @@ def train(
             "data/raw.dvc",
             "train.py",
             "scripts/split_data.py",
+            "service/features.py",
+            "service/predict.py",
         ):
             mlflow.log_artifact(path)
         model.fit(X_train, data.train["price"])
