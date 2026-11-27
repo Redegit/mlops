@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Мониторинг прогнозов</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='header.css') }}">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; color: #222; }
+        main { max-width: 1200px; margin: 32px auto; padding: 0 24px; }
+        .controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: end; }
+        label { display: flex; flex-direction: column; gap: 6px; }
+        input, select, button { font: inherit; padding: 8px; }
+        button { background: #007bff; color: white; border: 0; border-radius: 4px; cursor: pointer; }
+        button:disabled { opacity: 0.6; cursor: wait; }
+        .table-container { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 12px; border-bottom: 1px solid #ddd; text-align: left; vertical-align: top; }
+        th { background: #f5f5f5; white-space: nowrap; }
+        td small { display: block; color: #666; overflow-wrap: anywhere; margin-top: 5px; }
+        .error { color: #a11; }
+        .success { color: #176b38; }
+        .hint { color: #666; font-size: 14px; }
+    </style>
+</head>
+<body>
+{% include '_header.html' %}
+<main>
+    <h1>Мониторинг прогнозов</h1>
+    <p>Последние вызовы моделей из истории MLflow.</p>
+    <form id="historyForm" class="controls">
+        <label>Токен приложения
+            <input id="token" type="password" autocomplete="off" required>
+        </label>
+        <label>Последних записей
+            <select id="limit">
+                <option>10</option>
+                <option>25</option>
+                <option selected>50</option>
+                <option>100</option>
+                <option>200</option>
+            </select>
+        </label>
+        <button id="refresh" type="submit">Обновить</button>
+    </form>
+    <p class="hint">Время включает подготовку признаков и предсказание. Новая запись может появиться с небольшой задержкой.</p>
+    <p id="message" role="status">Введите токен и нажмите «Обновить».</p>
+    <div class="table-container">
+        <table>
+            <thead><tr>
+                <th>Время запроса</th><th>Модель</th><th>Квартира</th>
+                <th>Прогноз</th><th>Время, мс</th><th>Статус</th>
+            </tr></thead>
+            <tbody id="records"></tbody>
+        </table>
+    </div>
+</main>
+<script>
+    const form = document.getElementById('historyForm');
+    const records = document.getElementById('records');
+    const message = document.getElementById('message');
+    const refresh = document.getElementById('refresh');
+    const number = new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 2});
+    const rubles = new Intl.NumberFormat('ru-RU', {style: 'currency', currency: 'RUB', maximumFractionDigits: 0});
+
+    function cell(row, text) {
+        const td = document.createElement('td');
+        td.textContent = text;
+        row.appendChild(td);
+        return td;
+    }
+
+    function render(record) {
+        const row = document.createElement('tr');
+        const time = cell(row, new Date(record.timestamp_ms).toLocaleString('ru-RU'));
+        time.title = record.trace_id;
+        const model = cell(row, record.model);
+        if (record.model_uri) {
+            const version = document.createElement('small');
+            version.textContent = record.model_uri;
+            model.appendChild(version);
+        }
+        const input = record.inputs;
+        cell(row, `${number.format(input.area)} м²; ${input.rooms} комн.; ${input.floor}/${input.total_floors} эт.`);
+        cell(row, record.price === null ? '–' : rubles.format(record.price));
+        cell(row, record.duration_ms === null ? '–' : number.format(record.duration_ms));
+        const labels = {OK: 'Успешно', ERROR: 'Ошибка', IN_PROGRESS: 'Выполняется'};
+        const status = cell(row, labels[record.status] || record.status);
+        status.className = record.status === 'OK' ? 'success' : record.status === 'ERROR' ? 'error' : '';
+        if (record.error) {
+            const error = document.createElement('small');
+            error.textContent = record.error;
+            status.appendChild(error);
+        }
+        records.appendChild(row);
+    }
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        refresh.disabled = true;
+        message.textContent = 'Загрузка…';
+        try {
+            const response = await fetch(`/api/predictions?limit=${document.getElementById('limit').value}`, {
+                headers: {Authorization: `Bearer ${document.getElementById('token').value}`}
+            });
+            if (!response.ok) {
+                throw new Error(response.status === 401 ? 'Неверный токен приложения.' : 'Не удалось прочитать историю MLflow.');
+            }
+            const data = await response.json();
+            records.replaceChildren();
+            data.predictions.forEach(render);
+            message.textContent = data.predictions.length ? `Показано записей: ${data.predictions.length}` : 'Прогнозов пока нет.';
+        } catch (error) {
+            message.textContent = error.message;
+        } finally {
+            refresh.disabled = false;
+        }
+    });
+</script>
+</body>
+</html>

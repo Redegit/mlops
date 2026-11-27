@@ -3,22 +3,37 @@ from logging.config import dictConfig
 from typing import TypedDict, cast
 
 import dotenv
-import pandas as pd
 from flask import Flask, render_template, request
 from flask_cors import CORS
 from flask_httpauth import HTTPTokenAuth
 
 try:
-    from .features import make_features
+    from .features import ListingInput
+    from .monitoring import (
+        PredictionRecord,
+        get_recent_predictions,
+        predict_price,
+        setup_monitoring,
+    )
     from .predict import LoadedPredictor, load_predictor
 except ImportError:
-    from features import make_features
+    from features import ListingInput
+    from monitoring import (
+        PredictionRecord,
+        get_recent_predictions,
+        predict_price,
+        setup_monitoring,
+    )
     from predict import LoadedPredictor, load_predictor
 
 
 class ApiResponse(TypedDict):
     status: str
     data: str | int
+
+
+class HistoryResponse(TypedDict):
+    predictions: list[PredictionRecord]
 
 
 dictConfig(
@@ -70,6 +85,7 @@ def verify_token(token: str) -> str | None:
 
 # Модель по умолчанию задаётся в .env
 MODEL_NAME = config.get("MODEL_NAME") or "baseline_const"
+setup_monitoring()
 
 
 if __name__ != "__main__":
@@ -82,6 +98,23 @@ def index() -> str:
     return render_template("index.html")
 
 
+@app.route("/monitoring")
+def monitoring() -> str:
+    return render_template("monitoring.html")
+
+
+@app.route("/api/predictions")
+@auth.login_required
+def prediction_history() -> HistoryResponse | tuple[ApiResponse, int]:
+    try:
+        limit = int(request.args.get("limit", "50"))
+    except ValueError:
+        return {"status": "error", "data": "N должно быть целым числом"}, 400
+    if not 1 <= limit <= 200:
+        return {"status": "error", "data": "N должно быть от 1 до 200"}, 400
+    return {"predictions": get_recent_predictions(limit)}
+
+
 # Маршрут для обработки данных формы
 @app.route("/api/numbers", methods=["POST"])
 @auth.login_required
@@ -91,7 +124,7 @@ def process_numbers() -> ApiResponse | tuple[ApiResponse, int]:
 
     app.logger.info(f"Requst data: {data}")
     try:
-        listing = {
+        listing: ListingInput = {
             "area": float(data["area"]),
             "rooms": int(data["rooms"]),
             "total_floors": int(data["total_floors"]),
@@ -101,13 +134,8 @@ def process_numbers() -> ApiResponse | tuple[ApiResponse, int]:
         return {"status": "error", "data": "Ошибка парсинга данных"}
 
     predictor = cast(LoadedPredictor, app.config["predict"])
-    features = make_features(
-        pd.DataFrame([listing]),
-        predictor.rooms_encoding,
-        predictor.include_floor,
-    )
     try:
-        price = int(predictor.predict(features)[0])
+        price = predict_price(listing, predictor)
     except NotImplementedError as exc:
         app.logger.error(f"Model error: {exc}")
         return {"status": "error", "data": str(exc)}, 501

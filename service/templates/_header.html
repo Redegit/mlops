@@ -1,0 +1,9 @@
+<header class="site-header">
+    <div class="header-inner">
+        <a class="site-brand" href="/">Оценка квартиры</a>
+        <nav class="site-nav" aria-label="Основная навигация">
+            <a href="/" {% if request.endpoint == 'index' %}aria-current="page"{% endif %}>Прогноз</a>
+            <a href="/monitoring" {% if request.endpoint == 'monitoring' %}aria-current="page"{% endif %}>Мониторинг</a>
+        </nav>
+    </div>
+</header>

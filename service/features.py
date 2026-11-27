@@ -1,8 +1,15 @@
-from typing import Literal
+from typing import Literal, TypedDict
 
 import pandas as pd
 
 RoomsEncoding = Literal["legacy", "numeric", "categorical"]
+
+
+class ListingInput(TypedDict):
+    area: float
+    rooms: int
+    total_floors: int
+    floor: int
 
 
 def make_features(

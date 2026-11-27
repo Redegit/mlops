@@ -29,6 +29,7 @@ class LoadedPredictor:
     rooms_encoding: RoomsEncoding = "legacy"
     include_floor: bool = False
     model_uri: str | None = None
+    name: str = ""
 
 
 def baseline_const(data: pd.DataFrame) -> list[int]:
@@ -110,7 +111,10 @@ MODEL_LOADERS: dict[str, Callable[[], LoadedPredictor]] = {
 
 def load_predictor(name: str) -> LoadedPredictor:
     if handler := MODEL_LOADERS.get(name):
-        return handler()
-    if name.startswith(("models:/", "runs:/")):
-        return load_mlflow_model(name)
-    return load_pickle_model(name)
+        predictor = handler()
+    elif name.startswith(("models:/", "runs:/")):
+        predictor = load_mlflow_model(name)
+    else:
+        predictor = load_pickle_model(name)
+    predictor.name = name
+    return predictor
