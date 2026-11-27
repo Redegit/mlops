@@ -120,8 +120,16 @@ if __name__ == "__main__":
         help="Имя модели из service/predict.py или путь к сохранённой .pkl модели",
         default=MODEL_NAME,
     )
+    parser.add_argument(
+        "-p",
+        "--port",
+        help="Порт для запуска сервера",
+        default=5000,
+    )
     args = parser.parse_args()
 
     app.config["predict"] = load_predictor(args.model)
     app.logger.info(f"Use model: {args.model}")
-    app.run(debug=True)
+
+    port = int(args.port)
+    app.run(debug=True, port=port, host="0.0.0.0")
